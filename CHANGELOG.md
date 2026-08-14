@@ -9,10 +9,16 @@ and GitHub Release.
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-08-14
+
 ### Changed
 
-- Bumped `sofar-modbus` dependency to `>=0.1.6,<0.2.0`.
-- `coordinator.py` now aligns with `sofar-modbus` 0.1.6's fatal timeout behavior on silent inverters: if a component times out before any component has answered or refused, `_poll()` aborts immediately rather than walking the remaining components paying $N \times \text{timeout}$ latency. Refusal responses (exception codes) or timeouts occurring after at least one component has responded continue to be contained within `UpdateReport.failed`.
+- Bumped `sofar-modbus` dependency to `>=0.1.6,<0.2.0` (#20).
+- `coordinator.py` now aligns with `sofar-modbus` 0.1.6's fatal timeout behavior on silent inverters: if a component times out before any component has answered or refused, `_poll()` aborts immediately rather than walking the remaining components paying $N \times \text{timeout}$ latency. Refusal responses (exception codes) or timeouts occurring after at least one component has responded continue to be contained within `UpdateReport.failed` (#20).
+
+### Verification
+
+- All standalone test suites (`test_smoke.py`, `test_coordinator.py`, `test_diagnostics.py`, `test_write_entities.py`), `pytest` (25 passed), `ruff` formatting/linting, and `mypy` checks pass.
 
 ## [0.3.6] - 2026-08-14
 
