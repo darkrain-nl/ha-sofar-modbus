@@ -31,6 +31,8 @@ and Home Assistant Core's own tag format) — versions before 0.3.15 were tagged
   platforms, instead of skipping ahead to entity creation for a pre-identified device and
   refreshing in the background afterward. `config_flow.py`'s probe similarly moved from a bare
   identity read to a full `async_update()`, since the library no longer offers a lighter option.
+- Bumped `modbus-connection` to 4.8.1 (was 4.7.0). Non-breaking — the intervening releases were a
+  serial-transport timeout fix (this integration is TCP-only) and typing-only overload additions.
 
 ### Behavior change
 
@@ -48,10 +50,8 @@ and Home Assistant Core's own tag format) — versions before 0.3.15 were tagged
 - `pytest -q` — full suite (78 passed).
 - `python tests/lib/test_coordinator.py`, `test_smoke.py`, `test_write_entities.py`,
   `test_diagnostics_lib.py` — all passed.
-- `ruff check` clean. `mypy` has a pre-existing, unrelated module-resolution error in this
-  environment (confirmed present on `main` before this change too — a duplicate `sofar_modbus`
-  module name collision between the vendored dev checkout and the installed package, not
-  something this change introduced).
+- `ruff check` clean. `mypy --explicit-package-bases custom_components/ tests/` (CI's invocation)
+  clean.
 
 ## [0.6.1] - 2026-08-16
 
