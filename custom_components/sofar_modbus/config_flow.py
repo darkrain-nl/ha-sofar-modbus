@@ -43,7 +43,7 @@ async def _async_probe(data: dict[str, Any]) -> tuple[str, str | None]:
     connection = build_connection(data)
     try:
         device = SofarInverter(connection.for_unit(unit_id(data)), read_eps=data.get(CONF_READ_EPS, False))
-        await device.async_setup()
+        await device.async_update()
         if not device.inverter_type:
             raise SofarUnrecognizedError(device.serial_number or "")
     finally:

@@ -379,11 +379,10 @@ async def test_sensor_dead_link_unavailable(hass: HomeAssistant) -> None:
 
 
 def test_coordinator_served_components_fallbacks() -> None:
-    """Test coordinator.served_components fallback branches when device._polled is None."""
+    """Test coordinator.served_components before and after the first refresh lands."""
     from sofar_modbus.model import UpdateReport
 
     coord = SofarDataUpdateCoordinator.__new__(SofarDataUpdateCoordinator)
-    coord.device = SimpleNamespace(polled_components=None)  # type: ignore[assignment]
     coord.data = None  # type: ignore[assignment]
     assert coord.served_components == frozenset()
 
@@ -397,8 +396,7 @@ async def test_coordinator_all_components_failed_exception_group() -> None:
 
     coord = SofarDataUpdateCoordinator.__new__(SofarDataUpdateCoordinator)
     coord.name = "test"
-    coord._fast = {"c1": SimpleNamespace(), "c2": SimpleNamespace()}  # type: ignore[assignment,dict-item]
-    coord._slow = {}
+    coord.device = SimpleNamespace(inverter_type=1)  # type: ignore[assignment]
     coord._force_slow_tier = False
     coord._cycle = 0
     coord._consecutive_timeouts = 0
@@ -417,7 +415,7 @@ async def test_coordinator_all_components_failed_exception_group() -> None:
         },
     )
 
-    coord._poll = AsyncMock(return_value=failed_report)  # type: ignore[method-assign]
+    coord.device.async_update_readings = AsyncMock(return_value=failed_report)  # type: ignore[method-assign]
     coord._retry_failed = AsyncMock(return_value=failed_report)  # type: ignore[method-assign]
 
     # 1. Multiple errors -> ExceptionGroup
@@ -428,7 +426,7 @@ async def test_coordinator_all_components_failed_exception_group() -> None:
 
     # 3. Empty report (no updated and no failed)
     empty_report = UpdateReport(updated=set(), failed={})
-    coord._poll = AsyncMock(return_value=empty_report)  # type: ignore[method-assign]
+    coord.device.async_update_readings = AsyncMock(return_value=empty_report)  # type: ignore[method-assign]
     coord._retry_failed = AsyncMock(return_value=empty_report)  # type: ignore[method-assign]
     with pytest.raises(UpdateFailed) as exc_info_empty:
         await coord._async_update_data()

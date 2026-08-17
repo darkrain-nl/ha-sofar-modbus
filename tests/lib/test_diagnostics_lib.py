@@ -49,8 +49,6 @@ def _coordinator(device: SofarInverter) -> SofarDataUpdateCoordinator:
     coordinator.last_error = None
     coordinator.last_error_time = None
     coordinator._cycle = 0
-    coordinator._fast = None
-    coordinator._slow = None
     coordinator._force_slow_tier = False
     coordinator.data = None  # type: ignore[assignment]
     return coordinator

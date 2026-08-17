@@ -1333,7 +1333,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "modbus-connection", extras = ["tmodbus"], specifier = ">=4.7.0,<5.0.0" },
-    { name = "sofar-modbus", specifier = ">=0.1.8,<0.2.0" },
+    { name = "sofar-modbus", specifier = ">=0.1.10,<0.2.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -3223,14 +3223,14 @@ wheels = [
 
 [[package]]
 name = "sofar-modbus"
-version = "0.1.9"
+version = "0.1.10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "modbus-connection", extra = ["tmodbus"] },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6b/4c/b60d971d0920517900abbc8dcbe01c773cadd2880adbbd048a64b153d064/sofar_modbus-0.1.9.tar.gz", hash = "sha256:d939c896aa3c3c4c5602d0fc48476a79937e7557ca4ceb20952cafdb7226f6ef", size = 70536, upload-time = "2026-08-16T20:06:41.335Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f3/58/797ef5df71fe2a99deda3839e719489400fe857e7e121674c596e067ae24/sofar_modbus-0.1.10.tar.gz", hash = "sha256:fd8ee0b0095c946172f47e97ab0198fbe984b0166e097f1de5c6d99a3d87701a", size = 72306, upload-time = "2026-08-17T12:24:27.859Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/16/5c/20fdb3b91e39aa6f3b9abb87b23e5bfc742d6ed7d0b7bc961e597dfccc85/sofar_modbus-0.1.9-py3-none-any.whl", hash = "sha256:9d909bc3f0ace6565dc0938a3fe1a20dc911fbe26e3a6edd11c66bb0247454ca", size = 36566, upload-time = "2026-08-16T20:06:39.991Z" },
+    { url = "https://files.pythonhosted.org/packages/eb/aa/37519912439ae09cefb973f376a0954de099f70fc590518dc56a2a493f8c/sofar_modbus-0.1.10-py3-none-any.whl", hash = "sha256:6f88374760d944854ec9f75cef0e46416c08f8c2b4d1fb63071e27adf0b36197", size = 36987, upload-time = "2026-08-17T12:24:26.645Z" },
 ]
 
 [[package]]
