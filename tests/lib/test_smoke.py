@@ -63,8 +63,6 @@ async def _run(serial: str, label: str) -> int:
     seeded = _seed_serial(unit, serial)
 
     device = SofarInverter(unit)
-    await device.async_setup()
-    print(f"[{label}] serial={device.serial_number} model={device.model} type={device.inverter_type!r}")
 
     # No public "what will be polled" surface — seed every component's
     # fields regardless of whether this inverter type actually serves it;
@@ -81,6 +79,7 @@ async def _run(serial: str, label: str) -> int:
 
     report = await device.async_update()
     assert report.complete, f"unexpected failures against the mock backend: {report.failed}"
+    print(f"[{label}] serial={device.serial_number} model={device.model} type={device.inverter_type!r}")
     served = report.updated | set(report.failed)  # every component this poll attempted
 
     built = 0
@@ -221,7 +220,7 @@ async def test_total_sensor_restores_state_and_seeds_high_water() -> None:
     unit = MockModbusConnection().for_unit(1)
     _seed_serial(unit, "SS2ES104N5S445")
     device = SofarInverter(unit)
-    await device.async_setup()
+    await device.async_update_settings()  # settles serial_number/model/inverter_type, needed for the entity's unique_id
 
     coordinator: Any = SimpleNamespace(
         device=device,

@@ -107,8 +107,8 @@ async def test_setup_entry_not_ready_on_connection_error(hass: HomeAssistant) ->
     assert entry.state is ConfigEntryState.SETUP_RETRY
 
 
-async def test_setup_entry_loads_offline_when_pre_identified(hass: HomeAssistant) -> None:
-    """Test entry successfully loads and registers entities even if inverter is offline at boot."""
+async def test_setup_entry_retries_when_pre_identified_but_offline(hass: HomeAssistant) -> None:
+    """A known-identity inverter offline at boot now retries setup rather than loading unavailable (sofar-modbus 0.1.10 dropped the sync prime() path — see CHANGELOG)."""
     mock_conn = MockModbusConnection()
     unit = mock_conn.for_unit(1)
     _seed_pv_inverter(unit)
@@ -127,8 +127,7 @@ async def test_setup_entry_loads_offline_when_pre_identified(hass: HomeAssistant
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done(wait_background_tasks=True)
 
-    assert entry.state is ConfigEntryState.LOADED
-    assert isinstance(entry.runtime_data, SofarDataUpdateCoordinator)
+    assert entry.state is ConfigEntryState.SETUP_RETRY
 
 
 async def test_setup_entry_without_pre_identified_serial(hass: HomeAssistant) -> None:

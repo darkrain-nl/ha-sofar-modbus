@@ -1,4 +1,4 @@
-"""DataUpdateCoordinator wrapping SofarInverter.async_update().
+"""DataUpdateCoordinator wrapping SofarInverter.async_update_readings()/async_update_settings().
 
 sofar_modbus reads each polled component independently and contains a failed
 one in its returned UpdateReport rather than failing the whole poll — only a
@@ -12,12 +12,7 @@ missing (see the design note this ships alongside):
   commit 115df8b) so a failure surfaces on the first attempt and "the
   wrapper alone decides what happens next"; this coordinator is that
   wrapper.
-- After the first refresh (which still polls everything, the way
-  SofarInverter.async_update() does it, to learn what this inverter
-  serves), later polls split components into a fast tier (read every
-  cycle) and a slow tier — settings, energy counters, identity, listed
-  in _VOLATILE_COMPONENTS below — read only every
-  _SLOW_TIER_EVERY_N_CYCLES-th cycle, cutting total registers read per poll.
+- The settings tier is read only every _SLOW_TIER_EVERY_N_CYCLES-th cycle; readings every cycle.
 
 Also disconnect()s after repeated timed-out polls to recover a link
 that's up but unresponsive (a wedged serial-to-network bridge), and stores
@@ -45,7 +40,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 from modbus_connection import ModbusConnection, ModbusConnectionError, ModbusError, ModbusTimeoutError
 
-from sofar_modbus.model import SofarComponentBase, UpdateReport  # the PyPI library, not a self-import — see __init__.py
+from sofar_modbus.model import UpdateReport  # the PyPI library, not a self-import — see __init__.py
 from sofar_modbus.modern.device import SofarInverter
 
 _LOGGER = logging.getLogger(__name__)
@@ -57,39 +52,6 @@ _HEALTH_WINDOW = 60  # ~5min at the 5s base scan interval
 type SofarConfigEntry = ConfigEntry[SofarDataUpdateCoordinator]
 
 _T = TypeVar("_T")
-
-# Components with at least one sensor.py row whose state_class is MEASUREMENT
-# — these get every-cycle polling; everything else (settings, energy counters,
-# identity, and write-only components like feed_in, active_power_control,
-# passive, charger, remote) lands in the slow tier. Hand-maintained rather than
-# derived from sensor.py so the coordinator doesn't depend on any platform
-# module — keep this in sync with SENSOR_DESCRIPTIONS's state_class values;
-# tests/lib/test_coordinator.py asserts the two don't drift apart.
-# TOTAL/TOTAL_INCREASING counters (energy, battery_energy) are deliberately
-# excluded: the recorder buckets long-term statistics at 5 minutes regardless,
-# so polling those faster wouldn't sharpen their stats.
-_VOLATILE_COMPONENTS: frozenset[str] = frozenset(
-    {
-        "battery_1_2",
-        "battery_3_8",
-        "battery_totals",
-        "grid",
-        "offgrid",
-        "offgrid_single_phase",
-        "offgrid_three_phase",
-        "pv_1_2",
-        "pv_3",
-        "pv_4",
-        "pv_5_6",
-        "pv_7_8",
-        "pv_9_10",
-        "state",
-    }
-)
-
-
-def _volatile_components() -> frozenset[str]:
-    return _VOLATILE_COMPONENTS
 
 
 class SofarDataUpdateCoordinator(DataUpdateCoordinator[UpdateReport]):
@@ -118,13 +80,7 @@ class SofarDataUpdateCoordinator(DataUpdateCoordinator[UpdateReport]):
         self.last_error: str | None = None
         self.last_error_time: datetime | None = None
         self._cycle = 0
-        self._fast: dict[str, SofarComponentBase] | None = None
-        self._slow: dict[str, SofarComponentBase] | None = None
-        if self.device.polled_components is not None:
-            volatile = _volatile_components()
-            self._fast = {name: getattr(self.device, name) for name in self.device.polled_components if name in volatile}
-            self._slow = {name: getattr(self.device, name) for name in self.device.polled_components if name not in volatile}
-        self._force_slow_tier = False
+        self._force_slow_tier = True  # first refresh covers both tiers — served_components needs the full picture
         self.pending: dict[str, Any] = {}
 
     @property
@@ -147,9 +103,7 @@ class SofarDataUpdateCoordinator(DataUpdateCoordinator[UpdateReport]):
 
     @property
     def served_components(self) -> frozenset[str]:
-        """All component names served by this inverter type."""
-        if self.device.polled_components is not None:
-            return frozenset(self.device.polled_components)
+        """All component names served by this inverter type. Empty until the first refresh lands."""
         if self.data is not None:
             return frozenset(self.data.updated | set(self.data.failed))
         return frozenset()
@@ -169,17 +123,19 @@ class SofarDataUpdateCoordinator(DataUpdateCoordinator[UpdateReport]):
         self._force_slow_tier = True
         await super().async_request_refresh()
 
-    async def async_refresh_slow_tier(self) -> None:
-        """Poll the slow tier (controls, settings, energy totals) in the background."""
-        self._force_slow_tier = True
-        await self.async_refresh()
-
     async def _async_update_data(self) -> UpdateReport:
         try:
-            if self._fast is None:
-                report = await self._async_first_poll()
-            else:
-                report = await self._poll(self._components_due())
+            report = await self.device.async_update_readings()
+            if not self.device.inverter_type:
+                # Still unrecognized — placeholder success so __init__.py's own check raises a clear error.
+                return UpdateReport(updated={"identity"}, failed={})
+            if self._force_slow_tier or (self._cycle > 0 and self._cycle % _SLOW_TIER_EVERY_N_CYCLES == 0):
+                self._force_slow_tier = False
+                settings_report = await self.device.async_update_settings()
+                report = UpdateReport(
+                    report.updated | settings_report.updated,
+                    {**report.failed, **settings_report.failed},
+                )
             self._cycle += 1
             report = await self._retry_failed(report)
             if not report.updated:
@@ -210,50 +166,6 @@ class SofarDataUpdateCoordinator(DataUpdateCoordinator[UpdateReport]):
             self._record_poll_outcome(False, err)
             raise UpdateFailed(str(err)) from err
 
-    async def _async_first_poll(self) -> UpdateReport:
-        """Settle the fast/slow tier split from the inverter's served components
-        and refresh the fast tier on startup.
-        """
-        if self._fast is None:
-            if self.device.polled_components is None:
-                await self.device.async_setup()
-            if not self.device.inverter_type:
-                return UpdateReport(updated={"identity"}, failed={})
-            volatile = _volatile_components()
-            polled = self.device.polled_components or ()
-            self._fast = {name: getattr(self.device, name) for name in polled if name in volatile}
-            self._slow = {name: getattr(self.device, name) for name in polled if name not in volatile}
-        components_to_poll = self._fast if self._fast else dict(self._slow or {})
-        return await self._poll(components_to_poll)
-
-    def _components_due(self) -> dict[str, SofarComponentBase]:
-        assert self._fast is not None
-        components = dict(self._fast)
-        if self._force_slow_tier or (self._cycle > 0 and self._cycle % _SLOW_TIER_EVERY_N_CYCLES == 0):
-            assert self._slow is not None
-            components.update(self._slow)
-            self._force_slow_tier = False
-        return components
-
-    async def _poll(self, components: dict[str, SofarComponentBase], allow_fatal_timeout: bool = True) -> UpdateReport:
-        """One attempt at each of ``components``, no retry."""
-        updated: set[str] = set()
-        failed: dict[str, ModbusError] = {}
-        for name, component in components.items():
-            try:
-                await component.async_update()
-            except ModbusConnectionError:
-                raise
-            except ModbusTimeoutError as err:
-                if allow_fatal_timeout and not updated and not failed:
-                    raise  # nothing answered at all: assume the rest time out too
-                failed[name] = err
-            except ModbusError as err:
-                failed[name] = err
-            else:
-                updated.add(name)
-        return UpdateReport(updated, failed)
-
     async def _retry_failed(self, report: UpdateReport) -> UpdateReport:
         """Give every failed component one more try before accepting the failure.
 
@@ -261,11 +173,18 @@ class SofarDataUpdateCoordinator(DataUpdateCoordinator[UpdateReport]):
         outage) to avoid doubling the timeout latency when the link is down.
         """
         if report.failed and report.updated:
-            retry = await self._poll(
-                {name: getattr(self.device, name) for name in report.failed},
-                allow_fatal_timeout=False,
-            )
-            report = UpdateReport(report.updated | retry.updated, retry.failed)
+            updated: set[str] = set()
+            failed: dict[str, ModbusError] = {}
+            for name in report.failed:
+                try:
+                    await getattr(self.device, name).async_update()
+                except ModbusConnectionError:
+                    raise
+                except ModbusError as err:
+                    failed[name] = err
+                else:
+                    updated.add(name)
+            report = UpdateReport(report.updated | updated, failed)
 
         for name, cause in report.failed.items():
             prev = self._consecutive_failures.get(name, 0)

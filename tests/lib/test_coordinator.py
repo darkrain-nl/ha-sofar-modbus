@@ -61,17 +61,17 @@ def _coordinator(device: SofarInverter, connection: _FakeConnection) -> SofarDat
     coordinator.last_error = None
     coordinator.last_error_time = None
     coordinator._cycle = 0
-    coordinator._fast = None
-    coordinator._slow = None
     coordinator._force_slow_tier = False
+    coordinator.data = None
     return coordinator
 
 
 def _device(unit: MockModbusUnit) -> SofarInverter:
-    _seed_serial(unit, "SP1XXES100XX")  # HYBRID: grid (fast) + energy (slow) both served
-    unit.holding[0x0404] = 2  # system_state, in `state` (fast tier)
-    unit.holding[0x0484] = 5000  # grid_frequency, in `grid` (fast tier)
-    unit.holding[0x0684] = 100  # solar_generation_today, in `energy` (slow tier)
+    # HYBRID: grid/state/energy are readings-tier (fast); feed_in is settings-tier (slow).
+    _seed_serial(unit, "SP1XXES100XX")
+    unit.holding[0x0404] = 2  # system_state, in `state` (readings)
+    unit.holding[0x0484] = 5000  # grid_frequency, in `grid` (readings)
+    unit.holding[0x0684] = 100  # solar_generation_today, in `energy` (readings)
     return SofarInverter(unit)
 
 
@@ -81,14 +81,13 @@ async def test_retry_recovers_a_transient_failure() -> None:
     coordinator = _coordinator(device, _FakeConnection())
 
     report = await coordinator._async_update_data()
+    coordinator.data = report
     assert report.complete, f"first poll should be clean against the mock: {report.failed}"
-    assert coordinator._fast is not None and "grid" in coordinator._fast
-    assert coordinator._slow is not None and "energy" in coordinator._slow
-    assert "feed_in" in coordinator._slow
-    assert "remote" in coordinator._slow
+    assert "grid" in coordinator.served_components
+    assert "energy" in coordinator.served_components
 
     unit.fail_read(0x0484, ModbusTimeoutError("transient"))
-    first_attempt = await coordinator._poll(coordinator._fast)
+    first_attempt = await device.async_update_readings()
     assert "grid" in first_attempt.failed, "expected the first attempt to fail"
 
     unit.fail_read(0x0484, None)  # the glitch clears before the retry
@@ -125,7 +124,7 @@ async def test_success_rate_reflects_mixed_outcomes() -> None:
     device = _device(unit)
     coordinator = _coordinator(device, _FakeConnection())
 
-    await coordinator._async_update_data()  # cycle 1: clean, also settles tiers
+    await coordinator._async_update_data()  # cycle 1: clean
     assert coordinator.success_rate == 100.0
 
     unit.fail_read(0x0484, ModbusTimeoutError("stuck"))
@@ -144,7 +143,7 @@ async def test_health_window_caps_and_drops_oldest_outcome() -> None:
     coordinator = _coordinator(device, _FakeConnection())
 
     unit.fail_read(0x0484, ModbusTimeoutError("stuck"))
-    report = await coordinator._async_update_data()  # cycle 1: the one failure, also settles tiers
+    report = await coordinator._async_update_data()  # cycle 1: the one failure
     assert "grid" in report.failed
     unit.fail_read(0x0484, None)
     for _ in range(_HEALTH_WINDOW - 1):  # cycles 2..N: recovered
@@ -162,7 +161,7 @@ async def test_last_error_is_recorded_and_not_cleared_by_a_later_success() -> No
     unit = MockModbusConnection().for_unit(1)
     device = _device(unit)
     coordinator = _coordinator(device, _FakeConnection())
-    await coordinator._async_update_data()  # settle tiers, clean
+    await coordinator._async_update_data()  # clean
     assert coordinator.last_error is None
     assert coordinator.last_error_time is None
 
@@ -231,15 +230,15 @@ async def test_slow_tier_is_skipped_on_off_cycles() -> None:
     unit = MockModbusConnection().for_unit(1)
     device = _device(unit)
     coordinator = _coordinator(device, _FakeConnection())
-    await coordinator._async_update_data()  # settles tiers
+    await coordinator._async_update_data()  # cycle 0: readings only
 
     for _ in range(_SLOW_TIER_EVERY_N_CYCLES - 1):  # cycles not due
         report = await coordinator._async_update_data()
-        assert "energy" not in report.updated, "slow tier should be skipped off-cycle"
+        assert "feed_in" not in report.updated, "settings tier should be skipped off-cycle"
         assert "grid" in report.updated
 
     report = await coordinator._async_update_data()  # due cycle
-    assert "energy" in report.updated, "slow tier should poll on its due cycle"
+    assert "feed_in" in report.updated, "settings tier should poll on its due cycle"
     print("slow-tier-skipped-on-off-cycles: PASSED")
 
 
@@ -286,14 +285,12 @@ async def test_refusal_on_first_component_is_contained() -> None:
     coordinator = _coordinator(device, _FakeConnection())
     await coordinator._async_update_data()
 
-    # If first component fails with an exception response (e.g. IllegalDataAddressError),
-    # proving the device is awake, subsequent component reads proceed and are contained.
-    assert coordinator._fast is not None
-    first_component_name, first_component = next(iter(coordinator._fast.items()))
-    first_field = next(f for f in type(first_component).declared_fields.values() if getattr(f, "address", None) is not None)
+    # A component refusal (e.g. IllegalDataAddressError) proves the device is awake; the rest of the readings tier still proceeds.
+    state = device.state
+    first_field = next(f for f in type(state).declared_fields.values() if getattr(f, "address", None) is not None)
     unit.fail_read(first_field.address, IllegalDataAddressError())
-    report = await coordinator._poll(coordinator._fast)
-    assert first_component_name in report.failed
+    report = await device.async_update_readings()
+    assert "state" in report.failed
     assert len(report.updated) > 0
     print("refusal-on-first-component-is-contained: PASSED")
 
@@ -302,17 +299,17 @@ async def test_force_slow_tier_polls_slow_tier_on_off_cycles() -> None:
     unit = MockModbusConnection().for_unit(1)
     device = _device(unit)
     coordinator = _coordinator(device, _FakeConnection())
-    await coordinator._async_update_data()  # settles tiers, cycle 0 done (next cycle is 1, not due)
+    await coordinator._async_update_data()  # cycle 0 done (next cycle is 1, not due)
 
     # Next cycle is off-cycle (cycle 1)
     coordinator._force_slow_tier = True
     report = await coordinator._async_update_data()
-    assert "energy" in report.updated, "slow tier should poll when forced"
+    assert "feed_in" in report.updated, "settings tier should poll when forced"
     assert not coordinator._force_slow_tier, "force flag should reset after the poll"
 
-    # Cycle 2 without force should skip slow tier
+    # Cycle 2 without force should skip the settings tier
     report = await coordinator._async_update_data()
-    assert "energy" not in report.updated, "slow tier should be skipped again when not forced"
+    assert "feed_in" not in report.updated, "settings tier should be skipped again when not forced"
     print("force-slow-tier-polls-slow-tier-on-off-cycles: PASSED")
 
 
@@ -321,21 +318,25 @@ async def test_first_poll_only_polls_fast_tier_and_exposes_all_served_components
     device = _device(unit)
     coordinator = _coordinator(device, _FakeConnection())
 
-    # Cycle 0 (startup): Fast tier polled immediately
+    # Cycle 0 (startup): readings tier polled immediately, settings tier not yet.
     report = await coordinator._async_update_data()
+    coordinator.data = report
     assert report.complete
     assert "grid" in report.updated
     assert "state" in report.updated
+    assert "energy" in report.updated, "energy is a readings-tier component, polled every cycle"
     assert "identity" not in report.updated
-    assert "energy" not in report.updated
+    assert "feed_in" not in report.updated
     assert "grid" in coordinator.served_components
     assert "energy" in coordinator.served_components
-    assert "feed_in" in coordinator.served_components
+    assert "feed_in" not in coordinator.served_components, "not served until the settings tier has actually polled"
 
-    # Background slow tier refresh
+    # Background settings-tier refresh
     coordinator._force_slow_tier = True
     report = await coordinator._async_update_data()
-    assert "energy" in report.updated
+    coordinator.data = report
+    assert "feed_in" in report.updated
+    assert "feed_in" in coordinator.served_components
     print("first-poll-only-polls-fast-tier: PASSED")
 
 
@@ -346,78 +347,25 @@ async def test_pre_identified_device_initializes_tiers_in_memory() -> None:
     # Note: no serial seeded in holding registers!
     serial = "SP1XXES100XX"
     inverter_type, model = identify(serial)
-    device = SofarInverter(unit, inverter_type=inverter_type)
+    device = SofarInverter(unit, serial_number=serial, model=model, inverter_type=inverter_type)
     assert device.inverter_type is not None
-    device.prime(serial, model)
 
-    # Seed fast tier registers
+    # Seed readings-tier registers
     unit.holding[0x0404] = 2
     unit.holding[0x0484] = 5000
 
-    coordinator = SofarDataUpdateCoordinator.__new__(SofarDataUpdateCoordinator)
-    coordinator.name = "test"
-    coordinator.connection = _FakeConnection()  # type: ignore[assignment]
-    coordinator.device = device
-    coordinator._consecutive_timeouts = 0
-    coordinator._consecutive_failures = {}
-    coordinator._poll_outcomes = deque(maxlen=_HEALTH_WINDOW)
-    coordinator.last_error = None
-    coordinator.last_error_time = None
-    coordinator._cycle = 0
-    coordinator._force_slow_tier = False
-    # Coordinator __init__ logic
-    from custom_components.sofar_modbus.coordinator import _volatile_components
+    coordinator = _coordinator(device, _FakeConnection())
 
-    volatile = _volatile_components()
-    assert device.polled_components is not None
-    coordinator._fast = {name: getattr(device, name) for name in device.polled_components if name in volatile}
-    coordinator._slow = {name: getattr(device, name) for name in device.polled_components if name not in volatile}
-
-    assert "grid" in coordinator.served_components
-    assert "energy" in coordinator.served_components
-    assert "feed_in" in coordinator.served_components
-
-    # First update polls fast tier without ever reading serial register 0x0445
+    # First update polls the readings tier without ever reading serial register 0x0445
     report = await coordinator._async_update_data()
+    coordinator.data = report
     assert report.complete
     assert "grid" in report.updated
     assert "state" in report.updated
     assert 0x0445 not in [e.address for e in unit.read_events]
+    assert "grid" in coordinator.served_components
+    assert "energy" in coordinator.served_components
     print("pre-identified-device-initializes-tiers-in-memory: PASSED")
-
-
-def test_offgrid_output_components_are_volatile() -> None:
-    """Regression guard for issue #46: an omitted state_class on a sensor
-    description silently opts its whole component out of the fast poll tier.
-    offgrid_single_phase/offgrid_three_phase are live electrical output and
-    must land in _volatile_components()'s fast tier.
-    """
-    from custom_components.sofar_modbus.coordinator import _volatile_components
-
-    volatile = _volatile_components()
-    assert "offgrid_single_phase" in volatile
-    assert "offgrid_three_phase" in volatile
-    print("offgrid-output-components-are-volatile: PASSED")
-
-
-def test_volatile_components_matches_sensor_state_class_metadata() -> None:
-    """coordinator.py's _VOLATILE_COMPONENTS is hand-maintained, not derived
-    from sensor.py (so the coordinator has no import-time dependency on any
-    platform module — see coordinator.py's module docstring). This guards
-    against the two drifting apart: a new MEASUREMENT sensor row on a
-    component missing from _VOLATILE_COMPONENTS would silently land it in
-    the slow tier.
-    """
-    from homeassistant.components.sensor import SensorStateClass
-
-    from custom_components.sofar_modbus.coordinator import _volatile_components
-    from custom_components.sofar_modbus.sensor import SENSOR_DESCRIPTIONS
-
-    from_sensor_metadata = frozenset(
-        description.component for description in SENSOR_DESCRIPTIONS if description.state_class == SensorStateClass.MEASUREMENT
-    )
-    assert _volatile_components() == from_sensor_metadata
-    print("volatile-components-matches-sensor-state-class-metadata: PASSED")
 
 
 async def main() -> None:
@@ -435,8 +383,6 @@ async def main() -> None:
     await test_refusal_on_first_component_is_contained()
     await test_first_poll_only_polls_fast_tier_and_exposes_all_served_components()
     await test_pre_identified_device_initializes_tiers_in_memory()
-    test_offgrid_output_components_are_volatile()
-    test_volatile_components_matches_sensor_state_class_metadata()
     print("ALL COORDINATOR TESTS PASSED")
 
 

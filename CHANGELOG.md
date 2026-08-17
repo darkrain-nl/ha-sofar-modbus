@@ -12,21 +12,46 @@ and Home Assistant Core's own tag format) — versions before 0.3.15 were tagged
 
 ### Changed
 
-- `coordinator.py`'s fast/slow poll-tier split no longer derives its volatile-component set
-  from `sensor.py`'s `SENSOR_DESCRIPTIONS` at runtime. That derivation gave the coordinator a
-  hidden import-time dependency on the sensor platform, which blocks splitting this integration
-  into platform-by-platform PRs for Home Assistant Core (the coordinator has to exist before
-  `sensor.py` does). `_VOLATILE_COMPONENTS` is now a hand-maintained `frozenset` in
-  `coordinator.py`; a new test (`test_volatile_components_matches_sensor_state_class_metadata`)
-  asserts it still matches what `sensor.py`'s metadata would derive, so the two can't silently
-  drift apart. No behavior change — same components in the same tiers.
+- Bumped `sofar-modbus` to 0.1.10 (was 0.1.8). That release replaced the library's flat
+  polled-component list with a native readings/settings split
+  (`async_update_readings()`/`async_update_settings()`) and removed `SofarInverter.prime()`,
+  `async_setup()`, and `polled_components`. `coordinator.py` now polls the readings tier every
+  cycle and the settings tier on the existing `_SLOW_TIER_EVERY_N_CYCLES` cadence, trusting the
+  library's own split as the tier boundary — this supersedes the previous entry below:
+  `_VOLATILE_COMPONENTS` (the hand-maintained frozenset added there) and its drift-guard test are
+  gone now that the library provides the split natively. `energy`/`battery_energy` move from the
+  old slow tier into the readings tier as a result (they're telemetry, not settings, in the
+  library's split) — polled every cycle instead of every ~60s; the recorder already buckets their
+  long-term statistics at 5 minutes regardless, so this doesn't change what users see, only
+  register traffic.
+- `served_components` (and so which entities each platform creates) is now derived from the
+  coordinator's last completed poll rather than a static per-inverter-type list — the library no
+  longer exposes one without actually polling. `__init__.py` now always blocks on
+  `async_config_entry_first_refresh()` (forcing both tiers on that first poll) before forwarding
+  platforms, instead of skipping ahead to entity creation for a pre-identified device and
+  refreshing in the background afterward. `config_flow.py`'s probe similarly moved from a bare
+  identity read to a full `async_update()`, since the library no longer offers a lighter option.
+
+### Behavior change
+
+- A previously-configured inverter that's unreachable at boot (e.g. a PV-only unit asleep in the
+  dark) now retries setup (`SETUP_RETRY`) instead of loading immediately with unavailable
+  entities. This is a side effect of the `sofar-modbus` 0.1.10 changes above, not a deliberate
+  choice: the library no longer offers a way to learn a pre-identified device's served components
+  without polling it, so entity creation can no longer happen before that first poll completes.
+  Restoring the old behavior would need a `sofar-modbus` release of its own, which wasn't pursued
+  given the open PR staging this integration for Home Assistant Core. Home Assistant's own
+  setup-retry backoff still recovers once the device answers.
 
 ### Verification
 
-- `pytest -q` — full suite (80 passed).
+- `pytest -q` — full suite (78 passed).
 - `python tests/lib/test_coordinator.py`, `test_smoke.py`, `test_write_entities.py`,
-  `test_diagnostics_lib.py` — all passed, including the new drift-guard test.
-- `ruff check` / `mypy` clean.
+  `test_diagnostics_lib.py` — all passed.
+- `ruff check` clean. `mypy` has a pre-existing, unrelated module-resolution error in this
+  environment (confirmed present on `main` before this change too — a duplicate `sofar_modbus`
+  module name collision between the vendored dev checkout and the installed package, not
+  something this change introduced).
 
 ## [0.6.1] - 2026-08-16
 
