@@ -415,7 +415,7 @@ async def test_coordinator_all_components_failed_exception_group() -> None:
         },
     )
 
-    coord.device.async_update_readings = AsyncMock(return_value=failed_report)  # type: ignore[attr-defined]
+    coord.device.async_update_readings = AsyncMock(return_value=failed_report)  # type: ignore[method-assign]
     coord._retry_failed = AsyncMock(return_value=failed_report)  # type: ignore[method-assign]
 
     # 1. Multiple errors -> ExceptionGroup
@@ -426,7 +426,7 @@ async def test_coordinator_all_components_failed_exception_group() -> None:
 
     # 3. Empty report (no updated and no failed)
     empty_report = UpdateReport(updated=set(), failed={})
-    coord.device.async_update_readings = AsyncMock(return_value=empty_report)  # type: ignore[attr-defined]
+    coord.device.async_update_readings = AsyncMock(return_value=empty_report)  # type: ignore[method-assign]
     coord._retry_failed = AsyncMock(return_value=empty_report)  # type: ignore[method-assign]
     with pytest.raises(UpdateFailed) as exc_info_empty:
         await coord._async_update_data()

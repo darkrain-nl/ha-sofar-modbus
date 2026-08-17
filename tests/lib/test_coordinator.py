@@ -62,7 +62,7 @@ def _coordinator(device: SofarInverter, connection: _FakeConnection) -> SofarDat
     coordinator.last_error_time = None
     coordinator._cycle = 0
     coordinator._force_slow_tier = False
-    coordinator.data = None
+    coordinator.data = None  # type: ignore[assignment]
     return coordinator
 
 
