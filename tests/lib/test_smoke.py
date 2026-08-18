@@ -20,6 +20,7 @@ from typing import Any
 # instead, the same way test_coordinator.py/test_diagnostics.py do.
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from homeassistant.components.sensor import SensorDeviceClass  # noqa: E402
 from modbus_connection import ModbusTimeoutError  # noqa: E402
 from modbus_connection.encode import encode_int  # noqa: E402
 from modbus_connection.mock import MockModbusConnection  # noqa: E402
@@ -116,6 +117,52 @@ async def test_enum_sensor_renders_as_text() -> None:
     entity = SofarSensor(coordinator, description)  # type: ignore[arg-type]
     assert entity.native_value == "Grid Connected", f"expected a text label, got {entity.native_value!r}"
     print("enum-sensor-renders-as-text: PASSED")
+
+
+async def test_apparent_power_sensor_scales_kva_register_to_va_unit() -> None:
+    """apparent_power_output_total's register is kVA-scaled (sofar-modbus 0.1.11), but HA's
+    UnitOfApparentPower has no kilo variant — SofarSensorDescription.scale must convert it to
+    match the declared VA unit. Regression guard for that scale=1000 wiring.
+    """
+    unit = MockModbusConnection().for_unit(1)
+    _seed_serial(unit, "SS2ES104N5S445")
+    unit.holding[0x0487] = 500  # apparent_power_output_total: 500 * 0.01 = 5.0 kVA
+
+    device = SofarInverter(unit)
+    report = await device.async_update()
+    assert "grid" in report.updated, f"grid component did not refresh: {report.failed}"
+
+    coordinator = SimpleNamespace(device=device, config_entry=SimpleNamespace(title="Test Sofar"))
+    description = next(d for d in SENSOR_DESCRIPTIONS if d.key == "apparent_power_output_total")
+    entity = SofarSensor(coordinator, description)  # type: ignore[arg-type]
+    assert entity.native_value == 5000.0, f"expected 5.0 kVA scaled to 5000.0 VA, got {entity.native_value!r}"
+    print("apparent-power-sensor-scales-kva-register-to-va-unit: PASSED")
+
+
+def test_reactive_power_sensors_declare_kilovar_unit() -> None:
+    """reactive_power_* sensors must declare kvar, not var — see sofar-modbus 0.1.11 (9cc434d).
+    Regression guard for the sensor.py unit fix, independent of the library's own field metadata.
+    """
+    from homeassistant.const import UnitOfReactivePower
+
+    reactive = [d for d in SENSOR_DESCRIPTIONS if d.device_class == SensorDeviceClass.REACTIVE_POWER]
+    assert reactive, "expected at least one reactive_power sensor description"
+    assert all(d.native_unit_of_measurement == UnitOfReactivePower.KILO_VOLT_AMPERE_REACTIVE for d in reactive), (
+        f"a reactive_power sensor still declares the base var unit: {[d.key for d in reactive if d.native_unit_of_measurement != UnitOfReactivePower.KILO_VOLT_AMPERE_REACTIVE]}"
+    )
+    print("reactive-power-sensors-declare-kilovar-unit: PASSED")
+
+
+def test_offgrid_loadpeakratio_is_not_apparent_power() -> None:
+    """offgrid_loadpeakratio* is a dimensionless per-unit ratio, not apparent power — see
+    sofar-modbus 0.1.11 (96d1714). Regression guard for the sensor.py device_class/unit fix.
+    """
+    loadpeakratio = [d for d in SENSOR_DESCRIPTIONS if d.key.startswith("offgrid_loadpeakratio")]
+    assert loadpeakratio, "expected at least one offgrid_loadpeakratio sensor description"
+    assert all(d.device_class is None and d.native_unit_of_measurement is None for d in loadpeakratio), (
+        f"an offgrid_loadpeakratio sensor still declares apparent-power device_class/unit: {[d.key for d in loadpeakratio]}"
+    )
+    print("offgrid-loadpeakratio-is-not-apparent-power: PASSED")
 
 
 async def test_total_increasing_dip_guard() -> None:
@@ -271,6 +318,9 @@ async def test_hybrid_serves_meaningfully_more_entities_than_pv() -> None:
 async def main() -> None:
     test_all_descriptions_resolve()
     await test_enum_sensor_renders_as_text()
+    await test_apparent_power_sensor_scales_kva_register_to_va_unit()
+    test_reactive_power_sensors_declare_kilovar_unit()
+    test_offgrid_loadpeakratio_is_not_apparent_power()
     await test_total_increasing_dip_guard()
     await test_total_increasing_holds_available_through_failed_poll()
     await test_total_sensor_restores_state_and_seeds_high_water()

@@ -8,6 +8,44 @@ a `PATCH` bump means a fix with no new capability. Each version bump gets a matc
 and GitHub Release. Tags are unprefixed (`X.Y.Z`, matching `manifest.json`'s `version` field
 and Home Assistant Core's own tag format) — versions before 0.3.15 were tagged `vX.Y.Z`.
 
+## [Unreleased]
+
+### Fixed
+
+- `reactive_power_*` sensors (grid and off-grid, totals and per-phase) declared the base `var`
+  unit while their register is `0.01`-scaled the same way as the neighboring `kW` rows — actually
+  `kvar`, understating every reading by 1000x. Now declare `UnitOfReactivePower.KILO_VOLT_AMPERE_REACTIVE`.
+  Confirmed by `sofar-modbus` 0.1.11 ([`9cc434d`](https://github.com/darkrain-nl/sofar-modbus/commit/9cc434d)),
+  which fixed the same mislabeling in the library's own field metadata — that fix has no automatic
+  effect here, since `sensor.py` declares its own units independently of the library's, so this
+  integration needed the matching fix on its own side.
+- `apparent_power_*` sensors have the identical bug, but Home Assistant's `UnitOfApparentPower`
+  has no kilo variant to switch to — `SofarSensorDescription` gained a `scale` field (default
+  `1.0`) and these descriptions now set `scale=1000` to convert the kVA-scaled register into the
+  VA the declared unit expects, applied in `SofarSensor.native_value`.
+- `offgrid_loadpeakratio*` was declared as apparent power (`device_class=APPARENT_POWER`,
+  `unit=VA`) but is actually a dimensionless per-unit ratio, unrelated to apparent power. Dropped
+  the device_class and unit, matching how `power_factor_*` (also dimensionless) is already
+  declared. Confirmed by `sofar-modbus` 0.1.11
+  ([`96d1714`](https://github.com/darkrain-nl/sofar-modbus/commit/96d1714)).
+- These three fixes are targeted hand-edits to `sensor.py`'s generated `SENSOR_DESCRIPTIONS`
+  block, each with an inline comment — deliberate, verified deviations from upstream
+  `plugin_sofar.py` rather than a full resync, so a future resync doesn't silently revert them
+  without someone noticing.
+
+### Changed
+
+- Bumped `sofar-modbus` to 0.1.11 (was 0.1.10). No code changes needed for the bump itself — the
+  library's only other 0.1.11 changes are to its own `script/query.py` diagnostic tool, which this
+  integration doesn't use.
+
+### Verification
+
+- `pytest -q` — full suite (81 passed, including three new regression tests for the fixes above).
+- `python tests/lib/test_coordinator.py`, `test_smoke.py`, `test_write_entities.py`,
+  `test_diagnostics_lib.py` — all passed.
+- `ruff check` clean. `mypy --explicit-package-bases custom_components/ tests/` clean.
+
 ## [0.6.2] - 2026-08-17
 
 ### Changed
