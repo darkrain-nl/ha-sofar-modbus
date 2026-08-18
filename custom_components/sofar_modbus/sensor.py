@@ -202,6 +202,8 @@ class SofarSensor(SofarEntity, SensorEntity):
         # in its `options`, rather than showing a bare number.
         if isinstance(value, IntEnum):
             return _enum_label(value.name)
+        if isinstance(value, (int, float)) and self.entity_description.scale != 1.0:
+            return value * self.entity_description.scale
         return cast("str | int | float | date | None", value)
 
 
@@ -281,6 +283,7 @@ class SofarSensorDescription(SensorEntityDescription):
     """
 
     component: str  # attribute name on SofarInverter, e.g. 'grid', 'pv_1_2', 'energy'
+    scale: float = 1.0  # multiplies the raw value; for units HA has no kilo-variant of (e.g. VA)
 
 
 SENSOR_DESCRIPTIONS: tuple[SofarSensorDescription, ...] = (
@@ -483,7 +486,8 @@ SENSOR_DESCRIPTIONS: tuple[SofarSensorDescription, ...] = (
         component="grid",
         translation_key="reactive_power_output_total",
         device_class=SensorDeviceClass.REACTIVE_POWER,
-        native_unit_of_measurement=UnitOfReactivePower.VOLT_AMPERE_REACTIVE,
+        # kvar, not var — see sofar-modbus 0.1.11.
+        native_unit_of_measurement=UnitOfReactivePower.KILO_VOLT_AMPERE_REACTIVE,
         state_class=SensorStateClass.MEASUREMENT,
         entity_registry_enabled_default=False,
         suggested_display_precision=2,
@@ -496,6 +500,8 @@ SENSOR_DESCRIPTIONS: tuple[SofarSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfApparentPower.VOLT_AMPERE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
+        # No kVA in HA's UnitOfApparentPower — scale the kVA-scaled register to VA instead. See sofar-modbus 0.1.11.
+        scale=1000,
     ),
     SofarSensorDescription(
         key="active_power_pcc_total",
@@ -511,7 +517,8 @@ SENSOR_DESCRIPTIONS: tuple[SofarSensorDescription, ...] = (
         component="grid",
         translation_key="reactive_power_pcc_total",
         device_class=SensorDeviceClass.REACTIVE_POWER,
-        native_unit_of_measurement=UnitOfReactivePower.VOLT_AMPERE_REACTIVE,
+        # kvar, not var — see sofar-modbus 0.1.11.
+        native_unit_of_measurement=UnitOfReactivePower.KILO_VOLT_AMPERE_REACTIVE,
         state_class=SensorStateClass.MEASUREMENT,
         entity_registry_enabled_default=False,
         suggested_display_precision=2,
@@ -524,6 +531,8 @@ SENSOR_DESCRIPTIONS: tuple[SofarSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfApparentPower.VOLT_AMPERE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
+        # No kVA in HA's UnitOfApparentPower — scale the kVA-scaled register to VA instead. See sofar-modbus 0.1.11.
+        scale=1000,
     ),
     SofarSensorDescription(
         key="voltage_l1",
@@ -553,7 +562,8 @@ SENSOR_DESCRIPTIONS: tuple[SofarSensorDescription, ...] = (
         component="grid",
         translation_key="reactive_power_output_l1",
         device_class=SensorDeviceClass.REACTIVE_POWER,
-        native_unit_of_measurement=UnitOfReactivePower.VOLT_AMPERE_REACTIVE,
+        # kvar, not var — see sofar-modbus 0.1.11.
+        native_unit_of_measurement=UnitOfReactivePower.KILO_VOLT_AMPERE_REACTIVE,
         entity_registry_enabled_default=False,
         suggested_display_precision=2,
     ),
@@ -586,7 +596,8 @@ SENSOR_DESCRIPTIONS: tuple[SofarSensorDescription, ...] = (
         component="grid",
         translation_key="reactive_power_pcc_l1",
         device_class=SensorDeviceClass.REACTIVE_POWER,
-        native_unit_of_measurement=UnitOfReactivePower.VOLT_AMPERE_REACTIVE,
+        # kvar, not var — see sofar-modbus 0.1.11.
+        native_unit_of_measurement=UnitOfReactivePower.KILO_VOLT_AMPERE_REACTIVE,
         entity_registry_enabled_default=False,
         suggested_display_precision=2,
     ),
@@ -626,7 +637,8 @@ SENSOR_DESCRIPTIONS: tuple[SofarSensorDescription, ...] = (
         component="grid",
         translation_key="reactive_power_output_l2",
         device_class=SensorDeviceClass.REACTIVE_POWER,
-        native_unit_of_measurement=UnitOfReactivePower.VOLT_AMPERE_REACTIVE,
+        # kvar, not var — see sofar-modbus 0.1.11.
+        native_unit_of_measurement=UnitOfReactivePower.KILO_VOLT_AMPERE_REACTIVE,
         entity_registry_enabled_default=False,
         suggested_display_precision=2,
     ),
@@ -659,7 +671,8 @@ SENSOR_DESCRIPTIONS: tuple[SofarSensorDescription, ...] = (
         component="grid",
         translation_key="reactive_power_pcc_l2",
         device_class=SensorDeviceClass.REACTIVE_POWER,
-        native_unit_of_measurement=UnitOfReactivePower.VOLT_AMPERE_REACTIVE,
+        # kvar, not var — see sofar-modbus 0.1.11.
+        native_unit_of_measurement=UnitOfReactivePower.KILO_VOLT_AMPERE_REACTIVE,
         entity_registry_enabled_default=False,
         suggested_display_precision=2,
     ),
@@ -699,7 +712,8 @@ SENSOR_DESCRIPTIONS: tuple[SofarSensorDescription, ...] = (
         component="grid",
         translation_key="reactive_power_output_l3",
         device_class=SensorDeviceClass.REACTIVE_POWER,
-        native_unit_of_measurement=UnitOfReactivePower.VOLT_AMPERE_REACTIVE,
+        # kvar, not var — see sofar-modbus 0.1.11.
+        native_unit_of_measurement=UnitOfReactivePower.KILO_VOLT_AMPERE_REACTIVE,
         entity_registry_enabled_default=False,
         suggested_display_precision=2,
     ),
@@ -732,7 +746,8 @@ SENSOR_DESCRIPTIONS: tuple[SofarSensorDescription, ...] = (
         component="grid",
         translation_key="reactive_power_pcc_l3",
         device_class=SensorDeviceClass.REACTIVE_POWER,
-        native_unit_of_measurement=UnitOfReactivePower.VOLT_AMPERE_REACTIVE,
+        # kvar, not var — see sofar-modbus 0.1.11.
+        native_unit_of_measurement=UnitOfReactivePower.KILO_VOLT_AMPERE_REACTIVE,
         entity_registry_enabled_default=False,
         suggested_display_precision=2,
     ),
@@ -875,7 +890,8 @@ SENSOR_DESCRIPTIONS: tuple[SofarSensorDescription, ...] = (
         component="offgrid",
         translation_key="reactive_power_offgrid_total",
         device_class=SensorDeviceClass.REACTIVE_POWER,
-        native_unit_of_measurement=UnitOfReactivePower.VOLT_AMPERE_REACTIVE,
+        # kvar, not var — see sofar-modbus 0.1.11.
+        native_unit_of_measurement=UnitOfReactivePower.KILO_VOLT_AMPERE_REACTIVE,
         state_class=SensorStateClass.MEASUREMENT,
         entity_registry_enabled_default=False,
         suggested_display_precision=2,
@@ -888,6 +904,8 @@ SENSOR_DESCRIPTIONS: tuple[SofarSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfApparentPower.VOLT_AMPERE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
+        # No kVA in HA's UnitOfApparentPower — scale the kVA-scaled register to VA instead. See sofar-modbus 0.1.11.
+        scale=1000,
     ),
     SofarSensorDescription(
         key="offgrid_frequency",
@@ -954,7 +972,8 @@ SENSOR_DESCRIPTIONS: tuple[SofarSensorDescription, ...] = (
         component="offgrid_single_phase",
         translation_key="offgrid_reactive_power_output",
         device_class=SensorDeviceClass.REACTIVE_POWER,
-        native_unit_of_measurement=UnitOfReactivePower.VOLT_AMPERE_REACTIVE,
+        # kvar, not var — see sofar-modbus 0.1.11.
+        native_unit_of_measurement=UnitOfReactivePower.KILO_VOLT_AMPERE_REACTIVE,
         state_class=SensorStateClass.MEASUREMENT,
         entity_registry_enabled_default=False,
         suggested_display_precision=2,
@@ -964,7 +983,8 @@ SENSOR_DESCRIPTIONS: tuple[SofarSensorDescription, ...] = (
         component="offgrid_three_phase",
         translation_key="offgrid_reactive_power_output_l1",
         device_class=SensorDeviceClass.REACTIVE_POWER,
-        native_unit_of_measurement=UnitOfReactivePower.VOLT_AMPERE_REACTIVE,
+        # kvar, not var — see sofar-modbus 0.1.11.
+        native_unit_of_measurement=UnitOfReactivePower.KILO_VOLT_AMPERE_REACTIVE,
         state_class=SensorStateClass.MEASUREMENT,
         entity_registry_enabled_default=False,
         suggested_display_precision=2,
@@ -977,6 +997,8 @@ SENSOR_DESCRIPTIONS: tuple[SofarSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfApparentPower.VOLT_AMPERE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
+        # No kVA in HA's UnitOfApparentPower — scale the kVA-scaled register to VA instead. See sofar-modbus 0.1.11.
+        scale=1000,
     ),
     SofarSensorDescription(
         key="offgrid_apparent_power_output_l1",
@@ -986,13 +1008,14 @@ SENSOR_DESCRIPTIONS: tuple[SofarSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfApparentPower.VOLT_AMPERE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
+        # No kVA in HA's UnitOfApparentPower — scale the kVA-scaled register to VA instead. See sofar-modbus 0.1.11.
+        scale=1000,
     ),
     SofarSensorDescription(
         key="offgrid_loadpeakratio",
         component="offgrid_single_phase",
         translation_key="offgrid_loadpeakratio",
-        device_class=SensorDeviceClass.APPARENT_POWER,
-        native_unit_of_measurement=UnitOfApparentPower.VOLT_AMPERE,
+        # Dimensionless per-unit ratio, not apparent power — see sofar-modbus 0.1.11.
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
     ),
@@ -1000,8 +1023,7 @@ SENSOR_DESCRIPTIONS: tuple[SofarSensorDescription, ...] = (
         key="offgrid_loadpeakratio_l1",
         component="offgrid_three_phase",
         translation_key="offgrid_loadpeakratio_l1",
-        device_class=SensorDeviceClass.APPARENT_POWER,
-        native_unit_of_measurement=UnitOfApparentPower.VOLT_AMPERE,
+        # Dimensionless per-unit ratio, not apparent power — see sofar-modbus 0.1.11.
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
     ),
@@ -1036,7 +1058,8 @@ SENSOR_DESCRIPTIONS: tuple[SofarSensorDescription, ...] = (
         component="offgrid_three_phase",
         translation_key="offgrid_reactive_power_output_l2",
         device_class=SensorDeviceClass.REACTIVE_POWER,
-        native_unit_of_measurement=UnitOfReactivePower.VOLT_AMPERE_REACTIVE,
+        # kvar, not var — see sofar-modbus 0.1.11.
+        native_unit_of_measurement=UnitOfReactivePower.KILO_VOLT_AMPERE_REACTIVE,
         state_class=SensorStateClass.MEASUREMENT,
         entity_registry_enabled_default=False,
         suggested_display_precision=2,
@@ -1049,13 +1072,14 @@ SENSOR_DESCRIPTIONS: tuple[SofarSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfApparentPower.VOLT_AMPERE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
+        # No kVA in HA's UnitOfApparentPower — scale the kVA-scaled register to VA instead. See sofar-modbus 0.1.11.
+        scale=1000,
     ),
     SofarSensorDescription(
         key="offgrid_loadpeakratio_l2",
         component="offgrid_three_phase",
         translation_key="offgrid_loadpeakratio_l2",
-        device_class=SensorDeviceClass.APPARENT_POWER,
-        native_unit_of_measurement=UnitOfApparentPower.VOLT_AMPERE,
+        # Dimensionless per-unit ratio, not apparent power — see sofar-modbus 0.1.11.
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
     ),
@@ -1090,7 +1114,8 @@ SENSOR_DESCRIPTIONS: tuple[SofarSensorDescription, ...] = (
         component="offgrid_three_phase",
         translation_key="offgrid_reactive_power_output_l3",
         device_class=SensorDeviceClass.REACTIVE_POWER,
-        native_unit_of_measurement=UnitOfReactivePower.VOLT_AMPERE_REACTIVE,
+        # kvar, not var — see sofar-modbus 0.1.11.
+        native_unit_of_measurement=UnitOfReactivePower.KILO_VOLT_AMPERE_REACTIVE,
         state_class=SensorStateClass.MEASUREMENT,
         entity_registry_enabled_default=False,
         suggested_display_precision=2,
@@ -1103,13 +1128,14 @@ SENSOR_DESCRIPTIONS: tuple[SofarSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfApparentPower.VOLT_AMPERE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
+        # No kVA in HA's UnitOfApparentPower — scale the kVA-scaled register to VA instead. See sofar-modbus 0.1.11.
+        scale=1000,
     ),
     SofarSensorDescription(
         key="offgrid_loadpeakratio_l3",
         component="offgrid_three_phase",
         translation_key="offgrid_loadpeakratio_l3",
-        device_class=SensorDeviceClass.APPARENT_POWER,
-        native_unit_of_measurement=UnitOfApparentPower.VOLT_AMPERE,
+        # Dimensionless per-unit ratio, not apparent power — see sofar-modbus 0.1.11.
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
     ),
