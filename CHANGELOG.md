@@ -8,7 +8,7 @@ a `PATCH` bump means a fix with no new capability. Each version bump gets a matc
 and GitHub Release. Tags are unprefixed (`X.Y.Z`, matching `manifest.json`'s `version` field
 and Home Assistant Core's own tag format) — versions before 0.3.15 were tagged `vX.Y.Z`.
 
-## [Unreleased]
+## [0.6.4] - 2026-08-19
 
 ### Changed
 
