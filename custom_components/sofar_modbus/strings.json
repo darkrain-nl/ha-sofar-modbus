@@ -8,8 +8,7 @@
                     "name": "Name",
                     "host": "Host",
                     "port": "Port",
-                    "modbus_addr": "Modbus unit ID",
-                    "read_eps": "Poll EPS / backup registers"
+                    "modbus_addr": "Modbus unit ID"
                 }
             },
             "reconfigure": {
@@ -18,8 +17,7 @@
                 "data": {
                     "host": "Host",
                     "port": "Port",
-                    "modbus_addr": "Modbus unit ID",
-                    "read_eps": "Poll EPS / backup registers"
+                    "modbus_addr": "Modbus unit ID"
                 }
             }
         },

@@ -8,6 +8,22 @@ a `PATCH` bump means a fix with no new capability. Each version bump gets a matc
 and GitHub Release. Tags are unprefixed (`X.Y.Z`, matching `manifest.json`'s `version` field
 and Home Assistant Core's own tag format) — versions before 0.3.15 were tagged `vX.Y.Z`.
 
+## [Unreleased]
+
+### Changed
+
+- **EPS support is now auto-detected**: the config flow no longer asks "Poll EPS / backup
+  registers" as a setup checkbox. Setup and reconfigure now always probe the EPS/off-grid
+  register block, and `read_eps` is stored from whether that probe actually came back
+  (`"eps" in report.updated`) — inverters without EPS wiring get it disabled automatically,
+  and inverters that do have it no longer depend on the user knowing to enable it. Ported from
+  the `sofar-modbus-init` Core PR's review round (`96027d7722e`), which found the same thing:
+  the device already refuses unsupported register blocks gracefully, so asking the user to
+  guess was unnecessary. Also carries over a subtlety from that PR: once probed with
+  `read_eps=True`, `SofarInverter.inverter_type` always carries the EPS bit, so the
+  unrecognized-inverter check in `_async_probe` now calls `identify(serial)` directly instead
+  of relying on `inverter_type` truthiness.
+
 ## [0.6.3] - 2026-08-18
 
 ### Fixed
