@@ -92,9 +92,7 @@ class SofarConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 await self.async_set_unique_id(serial)
                 self._abort_if_unique_id_mismatch(reason="different_serial")
-                return self.async_update_reload_and_abort(
-                    entry, data={**reconfig_data, CONF_READ_EPS: read_eps}
-                )
+                return self.async_update_reload_and_abort(entry, data={**reconfig_data, CONF_READ_EPS: read_eps})
 
         schema = vol.Schema(
             {
